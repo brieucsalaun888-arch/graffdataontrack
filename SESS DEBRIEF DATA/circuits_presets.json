@@ -1,0 +1,72 @@
+{
+  "portimão": [
+    {
+      "Turn": "T1",
+      "ApexDist_m": 458.0
+    },
+    {
+      "Turn": "T2",
+      "ApexDist_m": 550.0
+    },
+    {
+      "Turn": "T3",
+      "ApexDist_m": 700.0
+    },
+    {
+      "Turn": "T4",
+      "ApexDist_m": 900.0
+    },
+    {
+      "Turn": "T5",
+      "ApexDist_m": 1250.0
+    },
+    {
+      "Turn": "T6",
+      "ApexDist_m": 1350.0
+    },
+    {
+      "Turn": "T7",
+      "ApexDist_m": 1741.0
+    },
+    {
+      "Turn": "T8",
+      "ApexDist_m": 2307.0
+    },
+    {
+      "Turn": "T9",
+      "ApexDist_m": 2436.0
+    },
+    {
+      "Turn": "T10",
+      "ApexDist_m": 2812.0
+    },
+    {
+      "Turn": "T11",
+      "ApexDist_m": 2890.0
+    },
+    {
+      "Turn": "T12",
+      "ApexDist_m": 3067.0
+    },
+    {
+      "Turn": "T13",
+      "ApexDist_m": 3179.0
+    },
+    {
+      "Turn": "T14",
+      "ApexDist_m": 3400.0
+    },
+    {
+      "Turn": "T15",
+      "ApexDist_m": 3689.0
+    },
+    {
+      "Turn": "T16",
+      "ApexDist_m": 3853.0
+    },
+    {
+      "Turn": "T17",
+      "ApexDist_m": 3922.0
+    }
+  ]
+}

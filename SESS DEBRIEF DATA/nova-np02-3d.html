@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nova NP02 — Analyse Télémétrie 3D (VBOX / MoTeC)</title>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/three@0.146.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.146.0/examples/js/loaders/GLTFLoader.js"></script>
+  <style>
+    :root {
+      --bg-panel: rgba(13, 17, 23, 0.92);
+      --bg-card: rgba(24, 30, 41, 0.88);
+      --border: rgba(255, 255, 255, 0.13);
+      --pink: #ff1e8a;
+      --blue: #0095ff;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --green: #10b981;
+      --red: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0b0f17; color: var(--text);
+    }
+
+    #map { width: 100%; height: 100%; }
+    .maplibregl-ctrl-attrib { display: none !important; }
+
+    /* Barre supérieure */
+    .topbar {
+      position: absolute; top: 12px; left: 12px; right: 12px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 8px 14px; backdrop-filter: blur(10px);
+      z-index: 20;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }
+    .badge {
+      background: linear-gradient(135deg, var(--pink), var(--blue));
+      padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 800;
+    }
+    .status-pill {
+      font-size: 11px; padding: 3px 10px; border-radius: 99px;
+      background: rgba(16, 185, 129, 0.16); color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+
+    button {
+      background: #232b3a; color: var(--text); border: 1px solid var(--border);
+      padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: 0.15s;
+    }
+    button:hover { background: #313c52; }
+    button.primary { background: var(--pink); border-color: var(--pink); color: #fff; }
+    button.primary:hover { filter: brightness(1.1); }
+    button.active { background: #2563eb; border-color: #60a5fa; color: #fff; }
+
+    /* Panneau latéral gauche */
+    .sidebar {
+      position: absolute; top: 62px; left: 12px; width: 325px;
+      max-height: calc(100vh - 140px); overflow-y: auto;
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px; backdrop-filter: blur(10px);
+      display: flex; flex-direction: column; gap: 10px; z-index: 15;
+    }
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px;
+    }
+    .card.pink { border-left: 4px solid var(--pink); }
+    .card.blue { border-left: 4px solid var(--blue); }
+    .card-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      margin-bottom: 7px; display: flex; justify-content: space-between; align-items: center; gap: 4px;
+    }
+    .dropzone {
+      border: 1.5px dashed rgba(255, 255, 255, 0.25); border-radius: 6px;
+      padding: 10px 8px; text-align: center; font-size: 12px; color: var(--muted);
+      cursor: pointer; transition: 0.2s;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: #fff; background: rgba(255, 255, 255, 0.06); color: #fff;
+    }
+    .file-info { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.35; }
+    select {
+      width: 100%; margin-top: 7px; background: #10141c; color: var(--text);
+      border: 1px solid var(--border); padding: 6px; border-radius: 6px; font-size: 12px;
+    }
+    .row-btns { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+    .row-btns button { flex: 1; font-size: 11px; padding: 5px 6px; }
+
+    .zoom-row {
+      display: flex; align-items: center; gap: 8px; margin-top: 8px;
+      font-size: 11px; color: var(--muted);
+    }
+    .zoom-row input[type="range"] { flex: 1; accent-color: #3b82f6; cursor: pointer; }
+
+    /* Télémétrie HUD droite */
+    .hud-right {
+      position: absolute; top: 62px; right: 12px; width: 295px;
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px; backdrop-filter: blur(10px);
+      display: flex; flex-direction: column; gap: 10px; z-index: 15;
+    }
+    .delta-box {
+      text-align: center; padding: 8px; border-radius: 8px;
+      background: rgba(0, 0, 0, 0.42); border: 1px solid var(--border);
+    }
+    .delta-label { font-size: 10px; text-transform: uppercase; color: var(--muted); }
+    .delta-val { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .telem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+    .telem-col { background: var(--bg-card); padding: 8px; border-radius: 6px; }
+    .telem-col h4 { font-size: 11px; margin-bottom: 6px; }
+    .stat { display: flex; justify-content: space-between; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+    .bar-bg { width: 100%; height: 6px; background: #0b0e14; border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+    .bar-fill { height: 100%; width: 0%; }
+
+    /* Lecteur timeline bas */
+    .player {
+      position: absolute; bottom: 12px; left: 12px; right: 12px;
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px; backdrop-filter: blur(10px);
+      display: flex; align-items: center; gap: 12px; z-index: 20;
+    }
+    #timelineSlider { flex: 1; accent-color: var(--pink); cursor: pointer; }
+    .time-display { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; min-width: 135px; text-align: right; }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Barre supérieure -->
+<div class="topbar">
+  <div class="brand">
+    <span class="badge">NOVA NP02</span>
+    <span>Analyse Télémétrie 3D — VBOX & MoTeC</span>
+    <span class="status-pill" id="venuePill">Prêt</span>
+  </div>
+  <div class="top-actions">
+    <button type="button" id="btnToggleRelief">Relief 3D : ON</button>
+    <button type="button" id="btnDemo" class="primary">Démo Navarra</button>
+  </div>
+</div>
+
+<!-- Panneau gauche : Imports & Réglages -->
+<div class="sidebar">
+  <!-- Voiture 1 : Rose -->
+  <div class="card pink">
+    <div class="card-title">
+      <span style="color: var(--pink);">● Voiture 1 — NP02 Rose</span>
+      <div>
+        <button type="button" id="btnModel1" style="padding:2px 6px; font-size:10px;" title="Importer un fichier .glb ou .gltf">Modèle 3D</button>
+        <button type="button" id="btnClear1" style="padding:2px 6px; font-size:10px;">Effacer</button>
+      </div>
+    </div>
+    <input type="file" id="modelFile1" accept=".glb,.gltf" hidden />
+    <div class="dropzone" id="drop1">
+      Glisser un ou plusieurs fichiers <b>.vbo</b><br/>ou un export MoTeC <b>.csv</b>
+      <input type="file" id="file1" multiple accept=".vbo,.csv,.txt,.ld,.ldx" hidden />
+    </div>
+    <div class="file-info" id="info1">Aucune donnée chargée.</div>
+    <select id="lapSelect1" disabled><option value="all">Session complète</option></select>
+  </div>
+
+  <!-- Voiture 2 : Bleue -->
+  <div class="card blue">
+    <div class="card-title">
+      <span style="color: var(--blue);">● Voiture 2 (Réf.) — NP02 Bleue</span>
+      <div>
+        <button type="button" id="btnModel2" style="padding:2px 6px; font-size:10px;" title="Importer un fichier .glb ou .gltf">Modèle 3D</button>
+        <button type="button" id="btnClear2" style="padding:2px 6px; font-size:10px;">Effacer</button>
+      </div>
+    </div>
+    <input type="file" id="modelFile2" accept=".glb,.gltf" hidden />
+    <div class="dropzone" id="drop2">
+      Glisser un ou plusieurs fichiers <b>.vbo</b><br/>ou un export MoTeC <b>.csv</b>
+      <input type="file" id="file2" multiple accept=".vbo,.csv,.txt,.ld,.ldx" hidden />
+    </div>
+    <div class="file-info" id="info2">Aucune donnée chargée.</div>
+    <select id="lapSelect2" disabled><option value="all">Session complète</option></select>
+  </div>
+
+  <!-- Modes de synchronisation et caméras -->
+  <div class="card">
+    <div class="card-title">Synchronisation & Caméra</div>
+    <div class="row-btns">
+      <button type="button" id="modeSession" class="active">Heure réelle</button>
+      <button type="button" id="modeGhost">Comparaison tour</button>
+    </div>
+    <div class="row-btns">
+      <button type="button" id="camChase1" class="active">Poursuite Rose</button>
+      <button type="button" id="camChase2">Poursuite Bleue</button>
+      <button type="button" id="camOverview">Vue circuit</button>
+      <button type="button" id="camFree">Libre</button>
+    </div>
+    <div class="zoom-row">
+      <span>Zoom</span>
+      <button type="button" id="btnZoomOut" style="padding:2px 7px;">-</button>
+      <input type="range" id="zoomSlider" min="16.0" max="22.5" step="0.1" value="19.6" />
+      <button type="button" id="btnZoomIn" style="padding:2px 7px;">+</button>
+    </div>
+    <div class="row-btns">
+      <button type="button" id="btnSetSF">Ligne S/F ici</button>
+      <button type="button" id="btnFlipLon">Inverser Est/Ouest</button>
+    </div>
+  </div>
+</div>
+
+<!-- HUD Télémétrie droite -->
+<div class="hud-right">
+  <div class="delta-box">
+    <div class="delta-label">Écart temps (Rose vs Bleue)</div>
+    <div class="delta-val" id="deltaVal">--.-- s</div>
+  </div>
+  <div class="telem-grid">
+    <div class="telem-col" style="border-top: 2px solid var(--pink);">
+      <h4 style="color: var(--pink);">NP02 ROSE</h4>
+      <div class="stat"><span>Vitesse</span><b id="v1Spd">0 km/h</b></div>
+      <div class="stat"><span>Rapport</span><b id="v1Gear">-</b></div>
+      <div class="stat"><span>Régime</span><b id="v1Rpm">0 tr/m</b></div>
+      <div class="stat"><span>Volant</span><b id="v1Steer">0°</b></div>
+      <div class="stat" style="font-size:10px; color:var(--muted); margin-bottom:2px;"><span>Gaz</span><span id="v1ThrTxt">0%</span></div>
+      <div class="bar-bg"><div class="bar-fill" id="v1Thr" style="background:var(--green);"></div></div>
+      <div class="stat" style="font-size:10px; color:var(--muted); margin-bottom:2px;"><span>Frein</span><span id="v1BrkTxt">0</span></div>
+      <div class="bar-bg"><div class="bar-fill" id="v1Brk" style="background:var(--red);"></div></div>
+    </div>
+    <div class="telem-col" style="border-top: 2px solid var(--blue);">
+      <h4 style="color: var(--blue);">NP02 BLEUE</h4>
+      <div class="stat"><span>Vitesse</span><b id="v2Spd">0 km/h</b></div>
+      <div class="stat"><span>Rapport</span><b id="v2Gear">-</b></div>
+      <div class="stat"><span>Régime</span><b id="v2Rpm">0 tr/m</b></div>
+      <div class="stat"><span>Volant</span><b id="v2Steer">0°</b></div>
+      <div class="stat" style="font-size:10px; color:var(--muted); margin-bottom:2px;"><span>Gaz</span><span id="v2ThrTxt">0%</span></div>
+      <div class="bar-bg"><div class="bar-fill" id="v2Thr" style="background:var(--green);"></div></div>
+      <div class="stat" style="font-size:10px; color:var(--muted); margin-bottom:2px;"><span>Frein</span><span id="v2BrkTxt">0</span></div>
+      <div class="bar-bg"><div class="bar-fill" id="v2Brk" style="background:var(--red);"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Barre de lecture -->
+<div class="player">
+  <button type="button" id="btnPlay" class="primary" style="min-width: 75px;">Lecture</button>
+  <select id="speedSelect" style="width: 75px; margin: 0;">
+    <option value="0.25">0.25x</option>
+    <option value="0.5">0.5x</option>
+    <option value="1" selected>1.0x</option>
+    <option value="2">2.0x</option>
+    <option value="4">4.0x</option>
+  </select>
+  <input type="range" id="timelineSlider" min="0" max="100" step="0.01" value="0" />
+  <div class="time-display" id="timeDisplay">00:00.0 / 00:00.0</div>
+</div>
+
+<script>
+/* ============================================================================
+   1. PARSEURS MULTI-FICHIERS VBOX (.VBO) ET MOTEC C127 (.CSV)
+   ============================================================================ */
+function parseVboTime(rawTime) {
+  const t = parseFloat(rawTime);
+  const h = Math.floor(t / 10000);
+  const m = Math.floor((t % 10000) / 100);
+  const s = t % 100;
+  return h * 3600 + m * 60 + s;
+}
+
+function parseVboFile(text) {
+  const lines = text.split(/\r?\n/);
+  let section = "", cols = [], dateOffsetSec = 0;
+  const points = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (line.startsWith("[") && line.endsWith("]")) {
+      section = line.toLowerCase();
+      continue;
+    }
+    if (section === "[header]") {
+      const m = line.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (m) {
+        const d = Date.UTC(+m[3], +m[2] - 1, +m[1]) / 1000;
+        if (!isNaN(d)) dateOffsetSec = d;
+      }
+    } else if (section === "[column names]") {
+      cols = line.replace(/velocity\s+kmh/gi, "velocity_kmh").toLowerCase().split(/\s+/);
+    } else if (section === "[data]" && cols.length > 0) {
+      const vals = line.split(/\s+/);
+      if (vals.length < 4) continue;
+
+      const idx = (names) => cols.findIndex(c => names.some(n => c === n || c.includes(n)));
+      const iLat = idx(["lat"]), iLon = idx(["long", "lon"]), iTime = idx(["time"]);
+      const iVel = idx(["velocity", "speed"]), iHead = idx(["heading"]), iSteer = idx(["steering"]);
+      const iThr = idx(["throttle"]), iBrk = idx(["brake"]), iGear = idx(["gear"]), iRpm = idx(["engine_speed", "rpm"]);
+
+      const rawLat = parseFloat(vals[iLat]);
+      const rawLon = parseFloat(vals[iLon]);
+      if (isNaN(rawLat) || isNaN(rawLon) || (rawLat === 0 && rawLon === 0)) continue;
+
+      const brk = iBrk >= 0 ? parseFloat(vals[iBrk]) || 0 : 0;
+      points.push({
+        utc: dateOffsetSec + parseVboTime(vals[iTime]),
+        lat: rawLat / 60.0,
+        lon: -rawLon / 60.0,
+        speed: iVel >= 0 ? parseFloat(vals[iVel]) || 0 : 0,
+        heading: iHead >= 0 ? parseFloat(vals[iHead]) || 0 : 0,
+        steer: iSteer >= 0 ? parseFloat(vals[iSteer]) || 0 : 0,
+        throttle: iThr >= 0 ? parseFloat(vals[iThr]) || 0 : 0,
+        brake: brk,
+        brakeLabel: `${Math.round(brk)}%`,
+        gear: iGear >= 0 ? Math.round(parseFloat(vals[iGear]) || 0) : 0,
+        rpm: iRpm >= 0 ? Math.round(parseFloat(vals[iRpm]) || 0) : 0,
+        lapNum: null
+      });
+    }
+  }
+  return { points, venue: "" };
+}
+
+function splitCsvLine(line, sep) {
+  const res = [];
+  let cur = "", inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === sep && !inQuotes) {
+      res.push(cur.replace(/^"|"$/g, "").trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  res.push(cur.replace(/^"|"$/g, "").trim());
+  return res;
+}
+
+function parseNum(str) {
+  if (!str) return NaN;
+  const clean = str.replace(/^"|"$/g, "").trim().replace(",", ".");
+  if (!clean) return NaN;
+  return parseFloat(clean);
+}
+
+function parseMotecCsv(text) {
+  const cleanText = text.replace(/^\uFEFF/, "").replace(/\0/g, "");
+  const lines = cleanText.split(/\r?\n/);
+
+  let headerIdx = -1;
+  let sep = ",";
+  let cols = [];
+  let units = [];
+  let logDateStr = "";
+  let logTimeStr = "";
+  let venueName = "";
+
+  const isLatCol = (p) => p === "lat" || p === "gps lat" || p === "gps_lat" || p.includes("latitude");
+  const isLonCol = (p) => p === "lon" || p === "long" || p === "gps lon" || p === "gps long" || p.includes("longitude");
+
+  for (let i = 0; i < Math.min(lines.length, 150); i++) {
+    const rawLine = lines[i].trim();
+    if (!rawLine) continue;
+
+    for (const candidateSep of [",", ";", "\t"]) {
+      const parts = splitCsvLine(rawLine, candidateSep);
+      const lower = parts.map(s => s.toLowerCase());
+
+      // Lecture métadonnées MoTeC (Venue, Log Date, Log Time)
+      if (lower[0] === "venue" && parts[1]) venueName = parts[1];
+      if (lower[0] === "log date" && parts[1]) logDateStr = parts[1];
+      if (lower[0] === "log time" && parts[1]) logTimeStr = parts[1];
+
+      if (lower.length >= 3 && lower.some(isLatCol) && lower.some(isLonCol)) {
+        headerIdx = i;
+        sep = candidateSep;
+        cols = lower;
+        if (i + 1 < lines.length) {
+          units = splitCsvLine(lines[i + 1], candidateSep).map(s => s.toLowerCase());
+        }
+        break;
+      }
+    }
+    if (headerIdx >= 0) break;
+  }
+
+  if (headerIdx < 0) return { points: [], venue: venueName };
+
+  // Conversion Log Date + Log Time (heure locale piste -> timestamp UTC)
+  let baseUtcSec = 0;
+  if (logDateStr) {
+    const dm = logDateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    const tm = logTimeStr.match(/(\d{2}):(\d{2}):(\d{2})/);
+    if (dm) {
+      const hh = tm ? +tm[1] : 0;
+      const mm = tm ? +tm[2] : 0;
+      const ss = tm ? +tm[3] : 0;
+      const dtLocal = new Date(+dm[3], +dm[2] - 1, +dm[1], hh, mm, ss);
+      if (!isNaN(dtLocal.getTime())) baseUtcSec = dtLocal.getTime() / 1000;
+    }
+  }
+
+  const iTime = cols.findIndex(c => c === "time" || c.startsWith("time"));
+  const iLat = cols.findIndex(isLatCol);
+  const iLon = cols.findIndex(isLonCol);
+  const iVel = cols.findIndex(c => ["corr speed", "gps speed", "ground speed", "vehicle speed", "speed"].some(n => c.includes(n)));
+  const iHead = cols.findIndex(c => c.includes("heading") || c === "course");
+  const iSteer = cols.findIndex(c => c.includes("steer") || c.includes("volant"));
+  const iThr = cols.findIndex(c => ["throttle", "pps", "aps", "gaz"].some(n => c.includes(n)));
+  const iBrk = cols.findIndex(c => ["brake pressure front", "brake", "frein"].some(n => c.includes(n)));
+  const iGear = cols.findIndex(c => c === "gear" || c.includes("gear") || c.includes("rapport"));
+  const iRpm = cols.findIndex(c => c.includes("engine speed") || c.includes("rpm") || c.includes("regime"));
+  const iLap = cols.findIndex(c => c === "lap number" || c === "lap");
+
+  const speedIsMs = iVel >= 0 && units[iVel] && units[iVel].includes("m/s");
+  const brakeIsBar = iBrk >= 0 && units[iBrk] && units[iBrk].includes("bar");
+
+  const points = [];
+  let maxBrkVal = 0;
+
+  for (let i = headerIdx + 2; i < lines.length; i++) {
+    const rawLine = lines[i].trim();
+    if (!rawLine) continue;
+    const vals = splitCsvLine(rawLine, sep);
+    if (vals.length <= Math.max(iLat, iLon)) continue;
+
+    let lat = parseNum(vals[iLat]);
+    let lon = parseNum(vals[iLon]);
+    const t = iTime >= 0 ? parseNum(vals[iTime]) : (points.length * 0.05);
+
+    if (isNaN(lat) || isNaN(lon) || isNaN(t) || (lat === 0 && lon === 0)) continue;
+    if (Math.abs(lat) > 90) lat /= 60.0;
+    if (Math.abs(lon) > 180) lon /= 60.0;
+
+    let spd = iVel >= 0 ? parseNum(vals[iVel]) || 0 : 0;
+    if (speedIsMs) spd *= 3.6;
+
+    const brkRaw = iBrk >= 0 ? parseNum(vals[iBrk]) || 0 : 0;
+    if (brkRaw > maxBrkVal) maxBrkVal = brkRaw;
+
+    const lapNumVal = iLap >= 0 ? Math.round(parseNum(vals[iLap])) : NaN;
+
+    points.push({
+      utc: baseUtcSec + t,
+      lat,
+      lon,
+      speed: spd,
+      heading: iHead >= 0 ? parseNum(vals[iHead]) || 0 : 0,
+      steer: iSteer >= 0 ? parseNum(vals[iSteer]) || 0 : 0,
+      throttle: iThr >= 0 ? parseNum(vals[iThr]) || 0 : 0,
+      brakeRaw: brkRaw,
+      brake: brkRaw,
+      brakeLabel: brakeIsBar ? `${Math.round(brkRaw)} bar` : `${Math.round(brkRaw)}%`,
+      gear: iGear >= 0 ? Math.round(parseNum(vals[iGear]) || 0) : 0,
+      rpm: iRpm >= 0 ? Math.round(parseNum(vals[iRpm]) || 0) : 0,
+      lapNum: !isNaN(lapNumVal) ? lapNumVal : null
+    });
+  }
+
+  // Normalisation de la jauge de frein (0-70 bar -> 0-100%)
+  if (brakeIsBar || maxBrkVal > 105) {
+    const refBar = Math.max(65, maxBrkVal);
+    points.forEach(p => {
+      p.brake = Math.min(100, Math.max(0, (p.brakeRaw / refBar) * 100));
+      p.brakeLabel = `${Math.round(p.brakeRaw)} bar`;
+    });
+  }
+
+  // Calcul automatique de l'orientation (heading) à partir de la trajectoire GPS
+  const hasHeading = iHead >= 0 && points.some(p => p.heading !== 0);
+  if (!hasHeading && points.length > 2) {
+    for (let i = 0; i < points.length; i++) {
+      const j = Math.min(points.length - 1, i + 4);
+      const k = Math.max(0, i - 4);
+      const pA = points[k], pB = points[j];
+      const dLon = (pB.lon - pA.lon) * Math.cos(pA.lat * Math.PI / 180);
+      const dLat = pB.lat - pA.lat;
+      if (Math.abs(dLon) > 1e-8 || Math.abs(dLat) > 1e-8) {
+        points[i].heading = (Math.atan2(dLon, dLat) * 180 / Math.PI + 360) % 360;
+      } else if (i > 0) {
+        points[i].heading = points[i - 1].heading;
+      }
+    }
+  }
+
+  return { points, venue: venueName };
+}
+
+/* ============================================================================
+   2. MODÈLE 3D NOVA PROTO NP02 + SUPPORT IMPORT .GLB / .GLTF PERSONNALISÉ
+   ============================================================================ */
+function buildNovaNP02Mesh(bodyHex) {
+  const car = new THREE.Group();
+
+  const bodyMat = new THREE.MeshStandardMaterial({ color: bodyHex, metalness: 0.4, roughness: 0.22 });
+  const carbonMat = new THREE.MeshStandardMaterial({ color: 0x151820, metalness: 0.3, roughness: 0.5 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x080c12, metalness: 0.92, roughness: 0.06 });
+  const lightMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, emissive: 0x64748b, roughness: 0.1 });
+  const brakeMat = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0x220000, roughness: 0.3 });
+
+  function box(mat, x, y, z, w, l, h, rotX = 0) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, l, h), mat);
+    mesh.position.set(x, y, z);
+    if (rotX) mesh.rotation.x = rotX;
+    car.add(mesh);
+    return mesh;
+  }
+
+  // Fond plat, diffuseur et splitter avant carbone
+  box(carbonMat, 0, 0.0, 0.08, 1.88, 4.45, 0.06);
+  box(carbonMat, 0, 2.24, 0.10, 1.92, 0.36, 0.04);
+  box(carbonMat, -0.95, 2.15, 0.22, 0.04, 0.38, 0.24);
+  box(carbonMat,  0.95, 2.15, 0.22, 0.04, 0.38, 0.24);
+
+  // Ailes avant galbées + optiques de phares + capot plongeant
+  box(bodyMat, -0.68, 1.48, 0.34, 0.52, 1.48, 0.40, -0.08);
+  box(bodyMat,  0.68, 1.48, 0.34, 0.52, 1.48, 0.40, -0.08);
+  box(lightMat, -0.68, 2.18, 0.27, 0.24, 0.08, 0.16, -0.25);
+  box(lightMat,  0.68, 2.18, 0.27, 0.24, 0.08, 0.16, -0.25);
+  box(bodyMat, 0, 1.56, 0.24, 0.88, 1.38, 0.22, -0.07);
+  box(carbonMat, 0, 1.48, 0.33, 0.38, 1.18, 0.10, -0.06);
+
+  // Pontons latéraux & ailes arrière galbées
+  box(bodyMat, -0.73, -0.25, 0.34, 0.44, 2.15, 0.42);
+  box(bodyMat,  0.73, -0.25, 0.34, 0.44, 2.15, 0.42);
+  box(bodyMat, -0.68, -1.55, 0.42, 0.52, 1.15, 0.48);
+  box(bodyMat,  0.68, -1.55, 0.42, 0.52, 1.15, 0.48);
+  box(carbonMat, 0, -1.15, 0.46, 0.86, 1.85, 0.42);
+
+  // Bulle cockpit fermée + pavillon + prise d'air de toit
+  const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.54, 1.45, 16), glassMat);
+  canopy.position.set(0, 0.35, 0.66);
+  canopy.scale.set(1.0, 1.0, 0.82);
+  car.add(canopy);
+
+  box(bodyMat,  0, 0.02, 0.92, 0.72, 0.85, 0.11);
+  box(bodyMat,  0, -0.05, 1.02, 0.26, 0.56, 0.14);
+  box(carbonMat, 0, 0.24, 1.02, 0.20, 0.05, 0.09);
+
+  // Aileron de requin dorsal & aileron arrière carbone
+  box(bodyMat, 0, -1.15, 0.78, 0.03, 1.55, 0.44);
+  box(carbonMat, 0, -2.08, 0.95, 1.88, 0.34, 0.05);
+  box(carbonMat, -0.45, -1.98, 0.72, 0.04, 0.22, 0.44);
+  box(carbonMat,  0.45, -1.98, 0.72, 0.04, 0.22, 0.44);
+  box(bodyMat, -0.94, -2.05, 0.86, 0.04, 0.48, 0.36);
+  box(bodyMat,  0.94, -2.05, 0.86, 0.04, 0.48, 0.36);
+
+  // Feu stop arrière central
+  const brakeLight = box(brakeMat, 0, -2.23, 0.36, 0.24, 0.06, 0.11);
+
+  // 4 Roues cylindriques (avant orientables)
+  function createWheel(x, y, z, radius, width) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, z);
+    const geom = new THREE.CylinderGeometry(radius, radius, width, 24);
+    geom.rotateZ(Math.PI / 2);
+    const mesh = new THREE.Mesh(geom, carbonMat);
+    pivot.add(mesh);
+    car.add(pivot);
+    return pivot;
+  }
+
+  const flWheel = createWheel(-0.78,  1.42, 0.31, 0.31, 0.32);
+  const frWheel = createWheel( 0.78,  1.42, 0.31, 0.31, 0.32);
+  createWheel(-0.78, -1.48, 0.33, 0.33, 0.36);
+  createWheel( 0.78, -1.48, 0.33, 0.33, 0.36);
+
+  return { group: car, flWheel, frWheel, brakeMat, brakeLight, isCustom: false };
+}
+
+function loadCustomGlbModel(file, carKey, bodyHex) {
+  if (!THREE.GLTFLoader) {
+    alert("Le chargeur 3D GLTFLoader n'a pas pu être initialisé (vérifie ta connexion internet).");
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const loader = new THREE.GLTFLoader();
+  loader.load(
+    url,
+    (gltf) => {
+      const root = gltf.scene;
+      // Redresser le modèle glTF (Y-up -> Z-up MapLibre) et le dimensionner à 4,60 m
+      const wrapper = new THREE.Group();
+      root.rotation.x = Math.PI / 2;
+      wrapper.add(root);
+
+      const box3 = new THREE.Box3().setFromObject(wrapper);
+      const size = new THREE.Vector3();
+      box3.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      const scaleFactor = 4.60 / maxDim;
+      wrapper.scale.setScalar(scaleFactor);
+
+      // Poser les roues exactement sur Z = 0 et centrer X/Y
+      const scaledBox = new THREE.Box3().setFromObject(wrapper);
+      const center = new THREE.Vector3();
+      scaledBox.getCenter(center);
+      wrapper.position.set(-center.x, -center.y, -scaledBox.min.z);
+
+      const container = new THREE.Group();
+      container.add(wrapper);
+
+      const brakeMat = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0x220000 });
+      const scene = threeLayer.scene;
+      const oldGroup = state[carKey].model.group;
+      const wasVisible = oldGroup.visible;
+      scene.remove(oldGroup);
+
+      container.visible = wasVisible;
+      scene.add(container);
+
+      state[carKey].model = {
+        group: container,
+        flWheel: null,
+        frWheel: null,
+        brakeMat,
+        isCustom: true
+      };
+      map.triggerRepaint();
+      alert(`Modèle 3D « ${file.name} » chargé sur la ${carKey === "car1" ? "voiture rose" : "voiture bleue"} !`);
+    },
+    undefined,
+    (err) => {
+      console.error(err);
+      alert("Impossible de lire ce fichier 3D. Utilise un fichier au format .glb ou .gltf.");
+    }
+  );
+}
+
+/* ============================================================================
+   3. INITIALISATION CARTE 3D MAPLIBRE GL JS (ZOOM JUSQU'À 23.5)
+   ============================================================================ */
+const map = new maplibregl.Map({
+  container: "map",
+  center: [-2.1665, 42.5595], // Navarra par défaut
+  zoom: 15.2,
+  maxZoom: 23.5,
+  pitch: 64,
+  bearing: 0,
+  antialias: true,
+  style: {
+    version: 8,
+    sources: {
+      satellite: {
+        type: "raster",
+        tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+        tileSize: 256,
+        maxzoom: 19
+      },
+      terrainDem: {
+        type: "raster-dem",
+        tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+        encoding: "terrarium",
+        tileSize: 256,
+        maxzoom: 15
+      }
+    },
+    layers: [
+      { id: "satellite-layer", type: "raster", source: "satellite" }
+    ],
+    terrain: { source: "terrainDem", exaggeration: 1.2 }
+  }
+});
+
+const state = {
+  car1: { raw: [], laps: [], activeData: [], model: null },
+  car2: { raw: [], laps: [], activeData: [], model: null },
+  originMercator: null,
+  sfLine: null,
+  reliefOn: true,
+  syncMode: "session",
+  camMode: "chase1",
+  chaseZoom: 19.6,
+  playing: false,
+  playbackSpeed: 1.0,
+  currentTime: 0,
+  maxDuration: 0,
+  lastFrameMs: performance.now()
+};
+
+// Permet de zoomer/dézoomer à la molette même pendant le suivi de la voiture
+map.getCanvas().addEventListener("wheel", (e) => {
+  if (state.camMode === "chase1" || state.camMode === "chase2") {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.35 : -0.35;
+    state.chaseZoom = Math.min(22.5, Math.max(16.0, state.chaseZoom + delta));
+    document.getElementById("zoomSlider").value = state.chaseZoom.toFixed(1);
+    updateFrame(state.currentTime);
+  }
+}, { passive: false });
+
+const threeLayer = {
+  id: "nova-np02-3d",
+  type: "custom",
+  renderingMode: "3d",
+
+  onAdd(mapInstance, gl) {
+    this.camera = new THREE.Camera();
+    this.scene = new THREE.Scene();
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x334155, 1.45);
+    this.scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.45);
+    dir.position.set(120, -150, 260);
+    this.scene.add(dir);
+
+    state.car1.model = buildNovaNP02Mesh(0xff1e8a);
+    state.car2.model = buildNovaNP02Mesh(0x0095ff);
+    state.car1.model.group.visible = false;
+    state.car2.model.group.visible = false;
+
+    this.scene.add(state.car1.model.group);
+    this.scene.add(state.car2.model.group);
+
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: mapInstance.getCanvas(),
+      context: gl,
+      antialias: true
+    });
+    this.renderer.autoClear = false;
+  },
+
+  render(gl, matrix) {
+    if (!state.originMercator) return;
+
+    const origin = state.originMercator;
+    const scale = origin.meterInMercatorCoordinateUnits();
+
+    const updateCar3D = (carObj, sample) => {
+      if (!carObj.model) return;
+      if (!sample) {
+        carObj.model.group.visible = false;
+        return;
+      }
+      carObj.model.group.visible = true;
+
+      const merc = maplibregl.MercatorCoordinate.fromLngLat([sample.lon, sample.lat], 0);
+      const eastMeters = (merc.x - origin.x) / scale;
+      const northMeters = -(merc.y - origin.y) / scale;
+      const groundZ = map.queryTerrainElevation([sample.lon, sample.lat]) || 0;
+
+      carObj.model.group.position.set(eastMeters, northMeters, groundZ);
+      carObj.model.group.rotation.z = -THREE.MathUtils.degToRad(sample.heading);
+
+      if (carObj.model.flWheel && carObj.model.frWheel) {
+        const wheelAngle = -THREE.MathUtils.degToRad(Math.max(-35, Math.min(35, sample.steer * 0.12)));
+        carObj.model.flWheel.rotation.z = wheelAngle;
+        carObj.model.frWheel.rotation.z = wheelAngle;
+      }
+
+      const braking = sample.brake > 8;
+      carObj.model.brakeMat.color.setHex(braking ? 0xff1111 : 0x440000);
+      carObj.model.brakeMat.emissive.setHex(braking ? 0xff0000 : 0x110000);
+    };
+
+    const s1 = sampleAtTime(state.car1.activeData, state.currentTime);
+    const s2 = sampleAtTime(state.car2.activeData, state.currentTime);
+    updateCar3D(state.car1, s1);
+    updateCar3D(state.car2, s2);
+
+    const worldToMercator = new THREE.Matrix4()
+      .makeTranslation(origin.x, origin.y, 0)
+      .scale(new THREE.Vector3(scale, -scale, scale));
+
+    this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix).multiply(worldToMercator);
+    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+  }
+};
+
+map.on("style.load", () => {
+  map.addSource("traj1", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addSource("traj2", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addSource("sfSource", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+
+  map.addLayer({
+    id: "traj2-line", type: "line", source: "traj2",
+    paint: { "line-color": "#0095ff", "line-width": 4, "line-opacity": 0.85 }
+  });
+  map.addLayer({
+    id: "traj1-line", type: "line", source: "traj1",
+    paint: { "line-color": "#ff1e8a", "line-width": 4, "line-opacity": 0.9 }
+  });
+  map.addLayer({
+    id: "sf-point", type: "circle", source: "sfSource",
+    paint: { "circle-radius": 7, "circle-color": "#facc15", "circle-stroke-width": 2, "circle-stroke-color": "#000" }
+  });
+
+  map.addLayer(threeLayer);
+});
+
+/* ============================================================================
+   4. GESTION DES DONNÉES, TOURS ET SYNCHRONISATION
+   ============================================================================ */
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function angleDiffDeg(a, b) {
+  let d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+function updateSfMarker() {
+  const src = map.getSource("sfSource");
+  if (!src) return;
+  src.setData({
+    type: "FeatureCollection",
+    features: state.sfLine ? [{
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [state.sfLine.lon, state.sfLine.lat] }
+    }] : []
+  });
+}
+
+function detectLaps(points) {
+  if (points.length < 20) return [];
+
+  // 1. Si le fichier MoTeC contient la colonne native "Lap Number", on l'utilise directement
+  const hasNativeLaps = points.some(p => p.lapNum !== null);
+  if (hasNativeLaps) {
+    const groups = new Map();
+    for (const p of points) {
+      if (p.lapNum === null) continue;
+      if (!groups.has(p.lapNum)) groups.set(p.lapNum, []);
+      groups.get(p.lapNum).push(p);
+    }
+    const laps = [];
+    let idx = 1;
+    for (const [lapId, slice] of groups.entries()) {
+      if (slice.length < 15) continue;
+      const dur = slice[slice.length - 1].utc - slice[0].utc;
+      laps.push({ number: `${idx} (MoTeC #${lapId})`, duration: dur, points: slice });
+      idx++;
+    }
+    if (laps.length > 0) return laps;
+  }
+
+  // 2. Sinon (VBOX .vbo), découpage automatique au passage de la ligne S/F
+  if (!state.sfLine) {
+    const flying = points.find(p => p.speed > 130) || points.find(p => p.speed > 60) || points[0];
+    state.sfLine = { lat: flying.lat, lon: flying.lon, heading: flying.heading };
+    updateSfMarker();
+  }
+
+  const laps = [];
+  let lapStartIdx = 0;
+  let lastCrossTime = points[0].utc;
+  let wasNear = false;
+
+  for (let i = 1; i < points.length; i++) {
+    const d = haversineMeters(points[i].lat, points[i].lon, state.sfLine.lat, state.sfLine.lon);
+    const sameDir = state.sfLine.heading === undefined || angleDiffDeg(points[i].heading, state.sfLine.heading) < 65;
+    const isNear = d < 35 && sameDir;
+
+    if (isNear && !wasNear && (points[i].utc - lastCrossTime) > 30) {
+      const slice = points.slice(lapStartIdx, i + 1);
+      if (slice.length > 10) {
+        laps.push({ number: String(laps.length + 1), duration: points[i].utc - lastCrossTime, points: slice });
+      }
+      lapStartIdx = i;
+      lastCrossTime = points[i].utc;
+    }
+    wasNear = isNear;
+  }
+  if (points.length - lapStartIdx > 20) {
+    laps.push({ number: String(laps.length + 1), duration: points[points.length - 1].utc - lastCrossTime, points: points.slice(lapStartIdx) });
+  }
+  return laps;
+}
+
+function formatLapTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = (sec % 60).toFixed(2).padStart(5, "0");
+  return `${String(m).padStart(2, "0")}:${s}`;
+}
+
+async function handleFiles(files, carKey) {
+  let merged = [];
+  let detectedVenue = "";
+  for (const file of files) {
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".ld") || lower.endsWith(".ldx")) {
+      alert("Le format MoTeC .ld est binaire.\nExporte-le depuis MoTeC i2 en CSV (Fichier > Exporter les données > CSV).");
+      return;
+    }
+    const text = await file.text();
+    const isVbo = lower.endsWith(".vbo") || text.includes("[column names]");
+    const parsed = isVbo ? parseVboFile(text) : parseMotecCsv(text);
+    if (parsed.venue) detectedVenue = parsed.venue;
+    merged = merged.concat(parsed.points);
+  }
+  if (merged.length === 0) {
+    alert("Aucun canal GPS valide (Latitude / Longitude) trouvé dans ce fichier.");
+    return;
+  }
+  if (detectedVenue) {
+    document.getElementById("venuePill").textContent = `Circuit : ${detectedVenue}`;
+  }
+  merged.sort((a, b) => a.utc - b.utc);
+  loadCarData(carKey, merged, `${files.length} fichier(s) — ${merged.length} points`);
+}
+
+function loadCarData(carKey, points, label) {
+  const car = state[carKey];
+  car.raw = points;
+  car.laps = detectLaps(points);
+  state.originMercator = maplibregl.MercatorCoordinate.fromLngLat([points[0].lon, points[0].lat], 0);
+
+  const infoEl = document.getElementById(carKey === "car1" ? "info1" : "info2");
+  const selEl = document.getElementById(carKey === "car1" ? "lapSelect1" : "lapSelect2");
+
+  infoEl.textContent = `${label} | ${car.laps.length} tour(s)`;
+  selEl.innerHTML = `<option value="all">Session complète (${formatLapTime(points[points.length - 1].utc - points[0].utc)})</option>`;
+  car.laps.forEach((lap, idx) => {
+    const opt = document.createElement("option");
+    opt.value = String(idx);
+    opt.textContent = `Tour ${lap.number} — ${formatLapTime(lap.duration)}`;
+    selEl.appendChild(opt);
+  });
+  selEl.disabled = false;
+
+  rebuildTimeline();
+  if (state.camMode === "free") flyToOverview();
+}
+
+function rebuildTimeline() {
+  const sel1 = document.getElementById("lapSelect1").value;
+  const sel2 = document.getElementById("lapSelect2").value;
+
+  const getSlice = (car, sel) => {
+    if (car.raw.length === 0) return [];
+    if (sel === "all" || !car.laps[+sel]) return car.raw;
+    return car.laps[+sel].points;
+  };
+
+  const d1 = getSlice(state.car1, sel1);
+  const d2 = getSlice(state.car2, sel2);
+
+  const prepareTrack = (pts, baseUtc) => {
+    let dist = 0;
+    return pts.map((p, i) => {
+      if (i > 0) dist += haversineMeters(pts[i - 1].lat, pts[i - 1].lon, p.lat, p.lon);
+      return { ...p, t: p.utc - baseUtc, dist };
+    });
+  };
+
+  if (state.syncMode === "session" && d1.length > 0 && d2.length > 0) {
+    const commonBase = Math.min(d1[0].utc, d2[0].utc);
+    state.car1.activeData = prepareTrack(d1, commonBase);
+    state.car2.activeData = prepareTrack(d2, commonBase);
+  } else {
+    state.car1.activeData = d1.length > 0 ? prepareTrack(d1, d1[0].utc) : [];
+    state.car2.activeData = d2.length > 0 ? prepareTrack(d2, d2[0].utc) : [];
+  }
+
+  const max1 = state.car1.activeData.length ? state.car1.activeData[state.car1.activeData.length - 1].t : 0;
+  const max2 = state.car2.activeData.length ? state.car2.activeData[state.car2.activeData.length - 1].t : 0;
+  state.maxDuration = Math.max(max1, max2, 0.1);
+  state.currentTime = 0;
+
+  const slider = document.getElementById("timelineSlider");
+  slider.max = state.maxDuration;
+  slider.value = 0;
+
+  updateTrajectoryLines();
+  updateFrame(0);
+}
+
+function updateTrajectoryLines() {
+  [["traj1", state.car1.activeData], ["traj2", state.car2.activeData]].forEach(([srcId, data]) => {
+    const src = map.getSource(srcId);
+    if (!src) return;
+    if (data.length < 2) {
+      src.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+    const coords = [];
+    const step = Math.max(1, Math.floor(data.length / 2200));
+    for (let i = 0; i < data.length; i += step) coords.push([data[i].lon, data[i].lat]);
+    src.setData({
+      type: "FeatureCollection",
+      features: [{ type: "Feature", geometry: { type: "LineString", coordinates: coords } }]
+    });
+  });
+}
+
+function sampleAtTime(data, t) {
+  if (!data || data.length === 0) return null;
+  if (t <= data[0].t) return data[0];
+  if (t >= data[data.length - 1].t) return data[data.length - 1];
+
+  let lo = 0, hi = data.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (data[mid].t <= t) lo = mid; else hi = mid;
+  }
+  const a = data[lo], b = data[hi];
+  const span = b.t - a.t;
+  const f = span > 0 ? (t - a.t) / span : 0;
+
+  let dHead = b.heading - a.heading;
+  if (dHead > 180) dHead -= 360;
+  if (dHead < -180) dHead += 360;
+
+  return {
+    lat: a.lat + (b.lat - a.lat) * f,
+    lon: a.lon + (b.lon - a.lon) * f,
+    speed: a.speed + (b.speed - a.speed) * f,
+    heading: (a.heading + dHead * f + 360) % 360,
+    steer: a.steer + (b.steer - a.steer) * f,
+    throttle: a.throttle + (b.throttle - a.throttle) * f,
+    brake: a.brake + (b.brake - a.brake) * f,
+    brakeLabel: a.brakeLabel || `${Math.round(a.brake)}%`,
+    gear: a.gear,
+    rpm: Math.round(a.rpm + (b.rpm - a.rpm) * f),
+    dist: a.dist + (b.dist - a.dist) * f
+  };
+}
+
+function flyToOverview() {
+  const pts = state.car1.raw.length ? state.car1.raw : state.car2.raw;
+  if (!pts.length) return;
+  const bounds = new maplibregl.LngLatBounds();
+  for (let i = 0; i < pts.length; i += 10) bounds.extend([pts[i].lon, pts[i].lat]);
+  map.fitBounds(bounds, { padding: 120, pitch: 45, bearing: 0, duration: 900 });
+}
+
+function updateFrame(t) {
+  const s1 = sampleAtTime(state.car1.activeData, t);
+  const s2 = sampleAtTime(state.car2.activeData, t);
+
+  if (s1) {
+    document.getElementById("v1Spd").textContent = `${Math.round(s1.speed)} km/h`;
+    document.getElementById("v1Gear").textContent = s1.gear || "-";
+    document.getElementById("v1Rpm").textContent = `${s1.rpm} tr/m`;
+    document.getElementById("v1Steer").textContent = `${Math.round(s1.steer)}°`;
+    document.getElementById("v1Thr").style.width = `${Math.min(100, Math.max(0, s1.throttle))}%`;
+    document.getElementById("v1ThrTxt").textContent = `${Math.round(s1.throttle)}%`;
+    document.getElementById("v1Brk").style.width = `${Math.min(100, Math.max(0, s1.brake))}%`;
+    document.getElementById("v1BrkTxt").textContent = s1.brakeLabel;
+  }
+  if (s2) {
+    document.getElementById("v2Spd").textContent = `${Math.round(s2.speed)} km/h`;
+    document.getElementById("v2Gear").textContent = s2.gear || "-";
+    document.getElementById("v2Rpm").textContent = `${s2.rpm} tr/m`;
+    document.getElementById("v2Steer").textContent = `${Math.round(s2.steer)}°`;
+    document.getElementById("v2Thr").style.width = `${Math.min(100, Math.max(0, s2.throttle))}%`;
+    document.getElementById("v2ThrTxt").textContent = `${Math.round(s2.throttle)}%`;
+    document.getElementById("v2Brk").style.width = `${Math.min(100, Math.max(0, s2.brake))}%`;
+    document.getElementById("v2BrkTxt").textContent = s2.brakeLabel;
+  }
+
+  const deltaEl = document.getElementById("deltaVal");
+  if (s1 && s2 && state.syncMode === "ghost") {
+    const avgSpdMs = Math.max(10, ((s1.speed + s2.speed) / 2) / 3.6);
+    const deltaSec = (s2.dist - s1.dist) / avgSpdMs;
+    const sign = deltaSec >= 0 ? "+" : "";
+    deltaEl.textContent = `${sign}${deltaSec.toFixed(2)} s`;
+    deltaEl.style.color = deltaSec <= 0 ? "var(--green)" : "var(--red)";
+  } else {
+    deltaEl.textContent = "--.-- s";
+    deltaEl.style.color = "var(--text)";
+  }
+
+  const targetSample = state.camMode === "chase1" ? s1 : (state.camMode === "chase2" ? s2 : null);
+  if (targetSample) {
+    map.jumpTo({
+      center: [targetSample.lon, targetSample.lat],
+      zoom: state.chaseZoom,
+      pitch: 68,
+      bearing: targetSample.heading
+    });
+  }
+
+  map.triggerRepaint();
+  document.getElementById("timeDisplay").textContent = `${formatLapTime(t)} / ${formatLapTime(state.maxDuration)}`;
+}
+
+/* ============================================================================
+   5. BOUCLE D'ANIMATION ET CONTRÔLES UI
+   ============================================================================ */
+function animate(now) {
+  const dt = (now - state.lastFrameMs) / 1000;
+  state.lastFrameMs = now;
+
+  if (state.playing && state.maxDuration > 0) {
+    state.currentTime += dt * state.playbackSpeed;
+    if (state.currentTime >= state.maxDuration) state.currentTime = 0;
+    document.getElementById("timelineSlider").value = state.currentTime;
+    updateFrame(state.currentTime);
+  }
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+function setupDropzone(dropId, inputId, carKey) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+  drop.onclick = () => input.click();
+  input.onchange = (e) => { if (e.target.files.length) handleFiles(e.target.files, carKey); };
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("dragover"); };
+  drop.ondragleave = () => drop.classList.remove("dragover");
+  drop.ondrop = (e) => {
+    e.preventDefault(); drop.classList.remove("dragover");
+    if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files, carKey);
+  };
+}
+setupDropzone("drop1", "file1", "car1");
+setupDropzone("drop2", "file2", "car2");
+
+// Boutons import modèle 3D .glb / .gltf
+document.getElementById("btnModel1").onclick = () => document.getElementById("modelFile1").click();
+document.getElementById("modelFile1").onchange = (e) => {
+  if (e.target.files[0]) loadCustomGlbModel(e.target.files[0], "car1", 0xff1e8a);
+};
+document.getElementById("btnModel2").onclick = () => document.getElementById("modelFile2").click();
+document.getElementById("modelFile2").onchange = (e) => {
+  if (e.target.files[0]) loadCustomGlbModel(e.target.files[0], "car2", 0x0095ff);
+};
+
+document.getElementById("lapSelect1").onchange = rebuildTimeline;
+document.getElementById("lapSelect2").onchange = rebuildTimeline;
+
+document.getElementById("btnClear1").onclick = () => {
+  state.car1.raw = []; state.car1.laps = []; state.car1.activeData = [];
+  document.getElementById("info1").textContent = "Aucune donnée chargée.";
+  document.getElementById("lapSelect1").disabled = true;
+  rebuildTimeline();
+};
+document.getElementById("btnClear2").onclick = () => {
+  state.car2.raw = []; state.car2.laps = []; state.car2.activeData = [];
+  document.getElementById("info2").textContent = "Aucune donnée chargée.";
+  document.getElementById("lapSelect2").disabled = true;
+  rebuildTimeline();
+};
+
+document.getElementById("btnPlay").onclick = (e) => {
+  state.playing = !state.playing;
+  e.target.textContent = state.playing ? "Pause" : "Lecture";
+};
+document.getElementById("speedSelect").onchange = (e) => {
+  state.playbackSpeed = parseFloat(e.target.value);
+};
+document.getElementById("timelineSlider").oninput = (e) => {
+  state.currentTime = parseFloat(e.target.value);
+  updateFrame(state.currentTime);
+};
+
+// Contrôle du Zoom
+document.getElementById("zoomSlider").oninput = (e) => {
+  state.chaseZoom = parseFloat(e.target.value);
+  if (state.camMode === "free") map.setZoom(state.chaseZoom);
+  else updateFrame(state.currentTime);
+};
+document.getElementById("btnZoomIn").onclick = () => {
+  state.chaseZoom = Math.min(22.5, state.chaseZoom + 0.4);
+  document.getElementById("zoomSlider").value = state.chaseZoom.toFixed(1);
+  if (state.camMode === "free") map.zoomIn();
+  else updateFrame(state.currentTime);
+};
+document.getElementById("btnZoomOut").onclick = () => {
+  state.chaseZoom = Math.max(16.0, state.chaseZoom - 0.4);
+  document.getElementById("zoomSlider").value = state.chaseZoom.toFixed(1);
+  if (state.camMode === "free") map.zoomOut();
+  else updateFrame(state.currentTime);
+};
+
+document.getElementById("modeSession").onclick = (e) => {
+  state.syncMode = "session";
+  e.target.classList.add("active");
+  document.getElementById("modeGhost").classList.remove("active");
+  rebuildTimeline();
+};
+document.getElementById("modeGhost").onclick = (e) => {
+  state.syncMode = "ghost";
+  e.target.classList.add("active");
+  document.getElementById("modeSession").classList.remove("active");
+  rebuildTimeline();
+};
+
+function setActiveCamBtn(activeId) {
+  ["camChase1", "camChase2", "camOverview", "camFree"].forEach(id => {
+    document.getElementById(id).classList.toggle("active", id === activeId);
+  });
+}
+
+document.getElementById("camChase1").onclick = () => { state.camMode = "chase1"; setActiveCamBtn("camChase1"); updateFrame(state.currentTime); };
+document.getElementById("camChase2").onclick = () => { state.camMode = "chase2"; setActiveCamBtn("camChase2"); updateFrame(state.currentTime); };
+document.getElementById("camOverview").onclick = () => { state.camMode = "free"; setActiveCamBtn("camOverview"); flyToOverview(); };
+document.getElementById("camFree").onclick = () => { state.camMode = "free"; setActiveCamBtn("camFree"); };
+
+document.getElementById("btnToggleRelief").onclick = (e) => {
+  state.reliefOn = !state.reliefOn;
+  map.setTerrain(state.reliefOn ? { source: "terrainDem", exaggeration: 1.2 } : null);
+  e.target.textContent = `Relief 3D : ${state.reliefOn ? "ON" : "OFF"}`;
+};
+
+document.getElementById("btnSetSF").onclick = () => {
+  const s1 = sampleAtTime(state.car1.activeData, state.currentTime) || sampleAtTime(state.car2.activeData, state.currentTime);
+  if (!s1) return;
+  state.sfLine = { lat: s1.lat, lon: s1.lon, heading: s1.heading };
+  updateSfMarker();
+  if (state.car1.raw.length) loadCarData("car1", state.car1.raw, "Ligne S/F recalée");
+  if (state.car2.raw.length) loadCarData("car2", state.car2.raw, "Ligne S/F recalée");
+};
+
+document.getElementById("btnFlipLon").onclick = () => {
+  state.sfLine = null;
+  if (state.car1.raw.length) {
+    state.car1.raw.forEach(p => { p.lon = -p.lon; });
+    loadCarData("car1", state.car1.raw, "Longitude inversée");
+  }
+  if (state.car2.raw.length) {
+    state.car2.raw.forEach(p => { p.lon = -p.lon; });
+    loadCarData("car2", state.car2.raw, "Longitude inversée");
+  }
+  flyToOverview();
+};
+
+/* ============================================================================
+   6. DÉMO CIRCUITO DE NAVARRA
+   ============================================================================ */
+document.getElementById("btnDemo").onclick = () => {
+  const waypoints = [
+    [42.55888, -2.16950], [42.55888, -2.16320], [42.55960, -2.16180],
+    [42.56120, -2.16230], [42.56140, -2.16460], [42.56020, -2.16560],
+    [42.56030, -2.16810], [42.56160, -2.16880], [42.56180, -2.17150],
+    [42.56010, -2.17220], [42.55980, -2.17040], [42.55888, -2.16950]
+  ];
+
+  function buildDemoLap(speedFactor, lateralOffset) {
+    const pts = [];
+    let utc = 43200;
+    const stepsPerSeg = 75;
+    for (let s = 0; s < waypoints.length - 1; s++) {
+      const [latA, lonA] = waypoints[s];
+      const [latB, lonB] = waypoints[s + 1];
+      const heading = (Math.atan2(lonB - lonA, latB - latA) * 180 / Math.PI + 360) % 360;
+      for (let k = 0; k < stepsPerSeg; k++) {
+        const f = k / stepsPerSeg;
+        const isCorner = (k > stepsPerSeg * 0.72);
+        pts.push({
+          utc,
+          lat: latA + (latB - latA) * f + lateralOffset,
+          lon: lonA + (lonB - lonA) * f + lateralOffset,
+          speed: (isCorner ? 115 : 246) * speedFactor,
+          heading,
+          steer: isCorner ? 40 : 0,
+          throttle: isCorner ? 10 : 100,
+          brake: isCorner ? 85 : 0,
+          brakeLabel: isCorner ? "58 bar" : "0 bar",
+          gear: isCorner ? 3 : 6,
+          rpm: isCorner ? 6500 : 8700,
+          lapNum: null
+        });
+        utc += 0.04 / speedFactor;
+      }
+    }
+    return pts;
+  }
+
+  state.sfLine = { lat: waypoints[0][0], lon: waypoints[0][1], heading: 90 };
+  updateSfMarker();
+  state.syncMode = "ghost";
+  document.getElementById("modeGhost").classList.add("active");
+  document.getElementById("modeSession").classList.remove("active");
+
+  loadCarData("car1", buildDemoLap(1.02, 0.000015), "Démo NP02 Rose");
+  loadCarData("car2", buildDemoLap(1.00, -0.000015), "Démo NP02 Bleue");
+  state.playing = true;
+  document.getElementById("btnPlay").textContent = "Pause";
+};
+</script>
+</body>
+</html>
